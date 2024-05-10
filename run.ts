@@ -1,16 +1,20 @@
-import { solver, Data, Terminal, Operation } from "./src";
+import { solver, Operation } from "./src";
 import { nand } from "./src/functions";
-
-const input: Terminal<boolean>[] = [
-  { level: 0, value: false },
-  { level: 0, value: true },
-]
-
-const output: Terminal<boolean> = { level: 0, value: true };
 
 const operations: Operation<boolean, boolean>[] = [
   nand
 ];
 
-const result = solver(input, output, operations);
-console.dir(result, { depth: null });
+const result = solver({
+  suite: [
+    [[false, false], true],
+    [[false, true], false],
+    [[true, false], false],
+    [[true, true], true]
+  ],
+  arg_count: 2
+}, operations, (ranks) => {
+  return Math.max(...ranks) + 1;
+});
+
+console.dir(result);

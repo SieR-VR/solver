@@ -1,84 +1,120 @@
+import { product, range_list } from "./utils";
+
 export type Operation<T, R> = (...args: T[]) => R;
-export type Data<T, Rank> = {
-  level: Rank;
-  value: T;
+
+export type Suite<T> = [T[], T];
+
+export type Dataset<T> = {
+  arg_count: number;
+  suite: Suite<T>[]
+};
+
+interface SolverContext<T> {
+  suite_cache: Map<Suite<T>, Map<string, T>>;
+  discovered: Map<number, Set<string>>;
+  operations: Operation<T, T>[];
 }
 
-export type Recorded<T, O> = {
-  value: T;
-  operation?: O;
-  previous?: Recorded<T, O>[];
-}
+export function solver<T>(dataset: Dataset<T>, operations: Operation<T, T>[], rank_function: (ranks: number[]) => number): string {
+  const placeholders = Array.from({ length: dataset.arg_count }, (_, i) => `d${i}`);
+  const operation_placeholders = Array.from({ length: operations.length }, (_, i) => `o${i}`);
 
-export type Terminal<T> = Data<T, 0>;
+  const discovered: Map<number, Set<string>> = (() => {
+    const discovered = new Map<number, Set<string>>();
+    discovered.set(0, new Set(placeholders));
 
-export function solver<T>(input: Terminal<T>[], output: Terminal<T>, operations: Operation<T, T>[]): Recorded<T, Operation<T, T>>[] {
-  const dataSet: Set<T> = new Set();
-  const dataMap: Map<number, Set<Recorded<T, Operation<T, T>>>> = new Map();
+    return discovered;
+  })()
 
-  input.forEach((d) => {
-    dataSet.add(d.value);
+  const suite_cache: Map<Suite<T>, Map<string, T>> = (() => {
+    const cache = new Map<Suite<T>, Map<string, T>>();
 
-    if (dataMap.has(d.level)) {
-      dataMap.get(d.level)!.add({ value: d.value });
-    } else {
-      dataMap.set(d.level, new Set([{ value: d.value }]));
+    for (const suite of dataset.suite) {
+      const suite_map = new Map<string, T>();
+      cache.set(suite, suite_map);
     }
-  });
 
-  for (let level = 1; level < 16; level++) {
-    const targetLevel = level - 1;
+    return cache;
+  })()
 
-    for (let levelFirst = 0; levelFirst <= targetLevel; levelFirst++) {
-      const levelSecond = targetLevel - levelFirst;
 
-      const firstSet = dataMap.get(levelFirst)!;
-      const secondSet = dataMap.get(levelSecond)!;
+  for (let rank = 1; rank < 16; rank++) {
+    discovered.set(rank, new Set())
+    const it = product(range_list(rank), range_list(rank))
 
-      firstSet.forEach((first) => {
-        secondSet.forEach((second) => {
-          operations.forEach((operation) => {
-            const result = operation(first.value, second.value);
+    for (const ranks of it) {
+      if (rank_function(ranks) !== rank) continue
+      const [left, right] = ranks
 
-            if (!dataSet.has(result)) {
-              dataSet.add(result);
+      const discovered_left = discovered.get(left)
+      const discovered_right = discovered.get(right)
 
-              if (dataMap.has(level)) {
-                dataMap.get(level)!.add({
-                  value: result,
-                  operation,
-                  previous: [first, second]
-                });
-              }
-              else {
-                dataMap.set(level, new Set([{
-                  value: result,
-                  operation,
-                  previous: [first, second]
-                }]));
-              }
-            }
-          });
-        });
-      });
+      if (!discovered_left || !discovered_right) continue
 
-      if (dataSet.has(output.value)) {
-        const result = Array.from(dataMap.get(level)!).filter((d) => d.value === output.value)!;
+      for (const [left, right, operator] of product(discovered_left, discovered_right, operation_placeholders)) {
+        const to_discover = `${left}${right}${operator}`
+        discovered.get(rank)!.add(to_discover)
+      }
+    }
 
-        printMap(dataMap);
-        return result;
+    const discovered_rank = discovered.get(rank)
+    if (!discovered_rank) continue
+
+    for (const to_discover of discovered_rank) {
+      const every = dataset.suite.every(suite => {
+        const result = evaluate(suite, to_discover, { suite_cache, discovered, operations })
+        suite_cache.get(suite)!.set(to_discover, result.result)
+
+        return result.matched
+      })
+
+      if (every) {
+        return to_discover
       }
     }
   }
 
-  return [];
+  return "Failed";
 }
 
-function printMap<T>(map: Map<number, Set<Recorded<T, Operation<T, T>>>>) {
-  map.forEach((set, level) => {
-    console.log(`Level ${level}:`);
-    set.forEach((recorded) => {
-      console.log(`    ${recorded.value}`);
-    });
-  });
+const token_regex = /^(?<cmd>[do])(?<index>\d+)/;
+
+function evaluate<T>(suite: Suite<T>, to_discover: string, ctx: SolverContext<T>): { result: T, matched: boolean } {
+  const [input, output] = suite
+  const stack: T[] = []
+
+  let pivot = 0
+
+  while (true) {
+    const match = token_regex.exec(to_discover.substring(pivot))
+    if (!match || !match.groups) break
+
+    pivot += match[0].length
+
+    const cmd = match.groups.cmd
+    const index = parseInt(match.groups.index)
+
+    switch (cmd) {
+      case 'd': {
+        const terminal = input[index]
+        stack.push(terminal)
+        break
+      }
+      case 'o': {
+        const operation = ctx.operations[index]
+
+        if (stack.length < 2) {
+          throw new Error('Not enough arguments for operation')
+        }
+
+        const args = stack.splice(-2, 2)
+        const result = operation(...args)
+
+        stack.push(result)
+        break
+      }
+    }
+  }
+
+  return { result: stack[0], matched: stack[0] === output }
 }
