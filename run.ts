@@ -1,18 +1,15 @@
 import { solver, Data, Terminal, Operation } from "./src";
-import { add, sub, mul, div } from "./src/functions";
+import { nand } from "./src/functions";
 
-const input: Terminal<number>[] = [
-    { level: 0, value: 1 },
-    { level: 0, value: 2 }, 
+const input: Terminal<boolean>[] = [
+  { level: 0, value: false },
+  { level: 0, value: true },
 ]
 
-const output: Terminal<number> = { level: 0, value: 5 };
+const output: Terminal<boolean> = { level: 0, value: true };
 
-const operations: Operation<number, number>[] = [
-    add,
-    sub,
-    mul,
-    div
+const operations: Operation<boolean, boolean>[] = [
+  nand
 ];
 
 const result = solver(input, output, operations);
